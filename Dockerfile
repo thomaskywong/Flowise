@@ -1,38 +1,25 @@
-# Build local monorepo image
-# docker build --no-cache -t  flowise .
+# Stage 1: Build stage
+FROM node:20-alpine AS build
 
-# Run image
-# docker run -d -p 3000:3000 flowise
+USER root
 
-FROM node:20-alpine
-RUN apk add --update libc6-compat python3 make g++
-# needed for pdfjs-dist
-RUN apk add --no-cache build-base cairo-dev pango-dev
-
-# Install Chromium
-RUN apk add --no-cache chromium
-
-# Install curl for container-level health checks
-# Fixes: https://github.com/FlowiseAI/Flowise/issues/4126
-RUN apk add --no-cache curl
-
-#install PNPM globaly
-RUN npm install -g pnpm
-
+# Skip downloading Chrome for Puppeteer (saves build time)
 ENV PUPPETEER_SKIP_DOWNLOAD=true
+
+# Install latest Flowise globally (specific version can be set: flowise@1.0.0)
+RUN npm install -g flowise
+
+# Stage 2: Runtime stage
+FROM node:20-alpine
+
+# Install runtime dependencies
+RUN apk add --no-cache chromium git python3 py3-pip make g++ build-base cairo-dev pango-dev curl
+
+# Set the environment variable for Puppeteer to find Chromium
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 
-ENV NODE_OPTIONS=--max-old-space-size=8192
+# Copy Flowise from the build stage
+COPY --from=build /usr/local/lib/node_modules /usr/local/lib/node_modules
+COPY --from=build /usr/local/bin /usr/local/bin
 
-WORKDIR /usr/src
-
-# Copy app source
-COPY . .
-
-RUN pnpm install
-
-RUN pnpm build
-
-EXPOSE 3000
-
-CMD [ "pnpm", "start" ]
+ENTRYPOINT ["flowise", "start"]
